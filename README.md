@@ -133,9 +133,9 @@ Le projet repose sur une approche en trois dimensions :
 * Jusqu’à 15 % du chiffre d’affaires du secteur
 * Les flottilles les plus énergivores sont les plus dépendantes aux aides
 
-<img width="755" height="197" alt="image" src="https://github.com/user-attachments/assets/b9d9ad43-12bc-4d5a-a403-51424cfb1db5" />
-
 <img width="393" height="277" alt="image" src="https://github.com/user-attachments/assets/5d3af8b9-f664-4380-bcfc-bcd02db15938" />
+
+<img width="755" height="197" alt="image" src="https://github.com/user-attachments/assets/b9d9ad43-12bc-4d5a-a403-51424cfb1db5" />
 
 ### 🔹 Un désalignement économique et environnemental
 
