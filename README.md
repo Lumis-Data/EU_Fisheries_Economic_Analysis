@@ -66,6 +66,9 @@ Période analysée : **2008–2022**
 
 <img width="465" height="352" alt="image" src="https://github.com/user-attachments/assets/af48c780-7eb2-41e6-8f5f-5e39256af88b" />
 
+<img width="465" height="352" alt="image" src="https://github.com/user-attachments/assets/a1f05452-6681-4388-a1dd-9750df1646a5" />
+
+
 ---
 
 ## 📈 Data Visualization
