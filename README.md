@@ -115,9 +115,6 @@ Le projet repose sur une approche en trois dimensions :
 
 <img width="700" height="400" alt="image" src="https://github.com/user-attachments/assets/01f3afe2-5dfb-4ef3-9897-a384798b7c6c" />
 
-
-<img width="700" height="400" alt="image" src="https://github.com/user-attachments/assets/75b9443f-0be2-423b-b818-d894dbbd8fd3" />
-
 ### 🔹 Un modèle basé sur un nombre limité d’espèces
 
 * ~75 % du chiffre d’affaires concentré sur 1 espèces
