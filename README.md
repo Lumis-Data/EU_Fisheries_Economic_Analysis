@@ -117,10 +117,10 @@ Le projet repose sur une approche en trois dimensions :
 
 ### 🔹 Un modèle basé sur un nombre limité d’espèces
 
-* ~70 % du chiffre d’affaires concentré sur 5 espèces
+* ~75 % du chiffre d’affaires concentré sur 1 espèces
 * Vulnérabilité face aux chocs environnementaux et réglementaires
 
-<img width="452" height="264" alt="image" src="https://github.com/user-attachments/assets/2ba66fdb-b70a-4e87-a230-a702ad53478f" />
+<img width="466" height="407" alt="image" src="https://github.com/user-attachments/assets/4d77571a-7162-4f29-b133-252b88f7900a" />
 
 ### 🔹 Un paradoxe économique majeur
 
