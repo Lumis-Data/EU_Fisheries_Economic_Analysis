@@ -18,6 +18,69 @@ Comment analyser la performance économique du secteur de la pêche dans l’Uni
 
 ---
 
+## 🗂️ Données
+
+### Sources
+
+* Données officielles du STECF (Commission européenne) : https://stecf.ec.europa.eu/document/b9b795d9-d6c5-4a27-b977-2b73afb645d2_en?prefLang=en
+* Données référentielles sur les espèces
+* Données sur les droits d’accises (Bulletin pétrolier)
+
+### Datasets construits
+
+* `fact_fs.csv` : données économiques des flottilles
+* `fact_landings.csv` : données de captures (volume et valeur)
+* `dim_energy_excise_duty.csv` : données sur les droits d'accises
+* `dim_fishingtech.csv` : données des techniques de pêche
+* `dim_geozone.csv` : données géographiques
+* `dim_species.csv` : données des espèces
+* `dim_variable.csv` : données des variables
+* `dim_vessel.csv` : données des navires
+
+Période analysée : **2008–2022**
+
+---
+
+## 🛠️ Méthodologie
+
+### 🔹 Data Processing (Python)
+
+* Nettoyage des valeurs manquantes
+* Suppression des flottes inactives
+* Réagrégation des données (confidentialité < 10 navires)
+* Feature engineering (catégories de flottilles et espèces)
+
+### 🔹 Transformation
+
+* Structuration des variables économiques
+* Réduction de la dimension des espèces (+13 000 → 5 catégories)
+
+### 🔹 Modélisation (Power BI)
+
+* Modèle en constellation
+* 2 tables de faits (économie / captures)
+* 6 tables de dimensions
+* 1 table calendar
+
+* Mesures DAX pour indicateurs clés
+
+<img width="465" height="352" alt="image" src="https://github.com/user-attachments/assets/af48c780-7eb2-41e6-8f5f-5e39256af88b" />
+
+---
+
+## 📈 Data Visualization
+
+Un tableau de bord interactif permet :
+
+* Exploration multi-dimensionnelle (pays, années, flottilles)
+* Analyse des performances économiques
+* Visualisation des captures par zone et espèce
+* Évaluation des subventions et de leur impact
+
+👉 Dashboard Power BI disponible dans dans le dossier `/dashboard`.
+
+---
+
 ## 🧠 Approche analytique
 
 Le projet repose sur une approche en trois dimensions :
@@ -79,61 +142,6 @@ Le projet repose sur une approche en trois dimensions :
 
 * Les activités les plus impactantes écologiquement sont souvent les plus subventionnées
 * Question centrale pour les politiques publiques européennes
-
----
-
-## 🗂️ Données
-
-### Sources
-
-* Données officielles du STECF (Commission européenne) : https://stecf.ec.europa.eu/document/b9b795d9-d6c5-4a27-b977-2b73afb645d2_en?prefLang=en
-* Données sur les droits d’accises (Bulletin pétrolier)
-
-### Datasets construits
-
-* `FS.csv` : données économiques des flottilles
-* `Landings.csv` : données de captures (volume et valeur)
-
-Période analysée : **2008–2022**
-
----
-
-## 🛠️ Méthodologie
-
-### 🔹 Data Processing (Python)
-
-* Nettoyage des valeurs manquantes
-* Suppression des flottes inactives
-* Réagrégation des données (confidentialité < 10 navires)
-* Feature engineering (catégories de flottilles et espèces)
-
-### 🔹 Transformation
-
-* Pivot des tables
-* Structuration des variables économiques
-* Réduction de la dimension des espèces (13 000 → 16 catégories)
-
-### 🔹 Modélisation (Power BI)
-
-* Modèle en constellation
-* 2 tables de faits (économie / captures)
-* 9 tables de dimensions
-* Mesures DAX pour indicateurs clés
-
-<img width="465" height="352" alt="image" src="https://github.com/user-attachments/assets/af48c780-7eb2-41e6-8f5f-5e39256af88b" />
-
----
-
-## 📈 Data Visualization
-
-Un tableau de bord interactif permet :
-
-* Exploration multi-dimensionnelle (pays, années, flottilles)
-* Analyse des performances économiques
-* Visualisation des captures par zone et espèce
-* Évaluation des subventions et de leur impact
-
-👉 Dashboard Power BI disponible dans dans le dossier `/dashboard`.
 
 ---
 
