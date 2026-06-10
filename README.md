@@ -177,12 +177,6 @@ Il contribue à :
 
 ---
 
-## 📄 Rapport
-
-Le rapport complet est disponible dans le dossier `/report`.
-
----
-
 ## 👤 Contact
 
 Pour toute question ou pour obtenir le rapport complet, merci de me contacter via GitHub.
