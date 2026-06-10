@@ -113,9 +113,7 @@ Le projet repose sur une approche en trois dimensions :
 * Forte sensibilité aux coûts énergétiques
 * Dépendance structurelle aux conditions de marché
 
-<img width="452" height="131" alt="image" src="https://github.com/user-attachments/assets/4af6055a-fe80-4d6d-99d3-ae70edc89f80" />
-
-<img width="452" height="131" alt="image" src="https://github.com/user-attachments/assets/40c31418-c730-48bf-8bb6-2ee49c2b4550" />
+<img width="1100" height="650" alt="Capture d’écran 2026-06-10 à 16 38 46" src="https://github.com/user-attachments/assets/380ffb13-dd5b-46fb-8bd8-7bd76a3c7966" />
 
 ### 🔹 Un modèle basé sur un nombre limité d’espèces
 
