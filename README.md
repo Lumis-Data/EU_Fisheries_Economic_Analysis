@@ -120,6 +120,8 @@ Le projet repose sur une approche en trois dimensions :
 * ~75 % du chiffre d’affaires concentré sur 1 espèces
 * Vulnérabilité face aux chocs environnementaux et réglementaires
 
+<img width="461" height="399" alt="image" src="https://github.com/user-attachments/assets/fdbb9dfe-6e43-46e3-b53c-dc0695d22430" />
+
 <img width="466" height="407" alt="image" src="https://github.com/user-attachments/assets/4d77571a-7162-4f29-b133-252b88f7900a" />
 
 ### 🔹 Un paradoxe économique majeur
