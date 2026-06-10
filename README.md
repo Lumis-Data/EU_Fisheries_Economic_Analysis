@@ -36,6 +36,7 @@ Comment analyser la performance économique du secteur de la pêche dans l’Uni
 * `dim_species.csv` : données des espèces
 * `dim_variable.csv` : données des variables
 * `dim_vessel.csv` : données des navires
+* `dim_country.csv` : données des pays
 
 Période analysée : **2008–2022**
 
@@ -59,15 +60,12 @@ Période analysée : **2008–2022**
 
 * Modèle en constellation
 * 2 tables de faits (économie / captures)
-* 6 tables de dimensions
-* 1 table calendar
+* 7 tables de dimensions
+* 1 table Calendar
 
 * Mesures DAX pour indicateurs clés
 
-<img width="465" height="352" alt="image" src="https://github.com/user-attachments/assets/af48c780-7eb2-41e6-8f5f-5e39256af88b" />
-
 <img width="465" height="352" alt="image" src="https://github.com/user-attachments/assets/a1f05452-6681-4388-a1dd-9750df1646a5" />
-
 
 ---
 
