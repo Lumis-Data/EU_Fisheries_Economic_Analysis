@@ -46,7 +46,7 @@ Période analysée : **2008–2022**
 
 ### 🔹 Data Processing (Python)
 
-* Nettoyage des valeurs manquantes
+* Nettoyage des valeurs manquantes (6 millions de cellules NA corrigées)
 * Suppression des flottes inactives
 * Réagrégation des données (confidentialité < 10 navires)
 * Feature engineering (catégories de flottilles et espèces)
