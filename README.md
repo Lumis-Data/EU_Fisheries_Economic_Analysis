@@ -44,7 +44,7 @@ Période analysée : **2008–2022**
 
 ## 🛠️ Méthodologie
 
-### 🔹 Data Processing (Python)
+### 🔹 Data Processing (SQL)
 
 * Nettoyage des valeurs manquantes (7,6 millions de cellules NA corrigées)
 * Suppression des flottes inactives
