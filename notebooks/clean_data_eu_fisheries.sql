@@ -212,11 +212,7 @@ ORDER BY ordre, pct_na DESC;
 -- 3.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('species_mapping_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('species_mapping_raw');
 
 -- Création de la table species_mapping_clean à partir des données brutes et colonnes pertinentes afin de procéder au nettoyage
 DROP TABLE IF EXISTS species_mapping_clean;
@@ -248,11 +244,7 @@ FROM species_mapping_clean
 ORDER BY alpha3_code;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('species_mapping_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('species_mapping_clean');
 
 -- ==================================
 -- 4. NETTOYAGE DES DONNEES DE fs_raw
@@ -261,16 +253,9 @@ ORDER BY
 -- 4.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fs_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fs_raw');
 
 -- Création de la table fs_clean à partir des données brutes et colonnes pertinentes afin de procéder au nettoyage
-DROP VIEW IF EXISTS v_fs_deduplicated;
-DROP VIEW IF EXISTS v_fs_processed;
-DROP TABLE IF EXISTS fs_clean_final;
 DROP TABLE IF EXISTS fs_clean;
 
 CREATE TABLE fs_clean AS
@@ -336,22 +321,50 @@ ORDER BY na;
 -- 4.2.1. VUE INTERMEDIAIRE POUR L'IMPUTATION DES DONNEES (BASEE SUR LES CLES DE PROPORTION)
 
 -- Création des vues intermédiaire
-CREATE VIEW v_fs_processed AS
-WITH fs_base AS (
-    SELECT f.*
+DROP VIEW IF EXISTS v_fs_deduplicated;
+DROP TABLE IF EXISTS fs_processed;
+
+CREATE TABLE fs_processed AS
+WITH fs_base AS MATERIALIZED (
+    SELECT
+        f.*,
+        ROW_NUMBER() OVER (
+            ORDER BY origin_sheet, fs_name, year, country_code, country_name,
+                     variable_group, variable_code, variable_name,
+                     supra_reg, fishing_tech, vessel_length
+        ) AS rn_base
     FROM fs_clean AS f
-    ORDER BY "origin_sheet","fs_name","year","country_code","country_name","variable_group",
-             "variable_code","variable_name","supra_reg","fishing_tech","vessel_length"
-    ),
+),
+
+fs_first_appearance AS (
+    SELECT
+        fs_name, year, supra_reg, variable_name,
+        MIN(rn_base) AS first_rn
+    FROM fs_base
+    GROUP BY fs_name, year, supra_reg, variable_name
+),
+
+fs_group_ids AS (
+    SELECT
+        fs_name, year, supra_reg, variable_name,
+        DENSE_RANK() OVER (ORDER BY first_rn) - 1 AS group_num
+    FROM fs_first_appearance
+),
 
 fs_groups AS (
     SELECT
         fb.*,
-        CONCAT('total_fs_', DENSE_RANK() OVER (ORDER BY fs_name, year, supra_reg, variable_name) - 1) AS id_total_by_fsname,
-        (BOOL_OR(value IS NULL) OVER w AND COUNT(*) OVER w > 1) AS has_na_in_fsname,
-        SUM(value) OVER w AS total_by_fsname
+        CONCAT('total_fs_', gi.group_num) AS id_total_by_fsname,
+        (BOOL_OR(fb.value IS NULL) OVER w AND COUNT(*) OVER w > 1) AS has_na_in_fsname,
+        SUM(fb.value) OVER w AS total_by_fsname,
+        gi.group_num
     FROM fs_base AS fb
-    WINDOW w AS (PARTITION BY fs_name, year, supra_reg, variable_name)
+    JOIN fs_group_ids AS gi
+        ON  fb.fs_name = gi.fs_name
+        AND fb.year = gi.year
+        AND fb.supra_reg = gi.supra_reg
+        AND fb.variable_name = gi.variable_name
+    WINDOW w AS (PARTITION BY fb.fs_name, fb.year, fb.supra_reg, fb.variable_name)
 ),
 
 fs_keys AS (
@@ -365,7 +378,6 @@ fs_keys AS (
     WHERE variable_name = 'Number of vessels'
     GROUP BY fs_name, year, fishing_tech, vessel_length
 )
-
 SELECT
     g.*,
     k.keys_proportion,
@@ -383,23 +395,37 @@ LEFT JOIN fs_keys AS k
     AND g.vessel_length = k.vessel_length;
 
 -- Contrôle de l'imputation
-SELECT
-    has_na_in_fsname,
-    SUM(new_value) AS new_value,
-    SUM(value) AS value,
-    ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance
-FROM v_fs_processed
-GROUP BY has_na_in_fsname
-ORDER BY has_na_in_fsname;
+SELECT statut, new_value, value, variance
+FROM (
+    SELECT
+        has_na_in_fsname::TEXT AS statut,
+        SUM(new_value) AS new_value,
+        SUM(value) AS value,
+        ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance,
+        0 AS sort_order
+    FROM fs_processed
+    GROUP BY has_na_in_fsname
+
+    UNION ALL
+
+    SELECT
+        'TOTAL' AS statut,
+        SUM(new_value) AS new_value,
+        SUM(value) AS value,
+        ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance,
+        1 AS sort_order
+    FROM fs_processed
+) sub
+ORDER BY sort_order, statut;
 
 -- Contrôle des clés de répartition
 SELECT
     id_total_by_fsname,
-    SUM(keys_proportion) AS somme_proportions
-FROM v_fs_processed
+    ROUND(SUM(keys_proportion)::NUMERIC, 6) AS somme_proportions
+FROM fs_processed
 WHERE has_na_in_fsname = TRUE
 GROUP BY id_total_by_fsname
-ORDER BY ABS(SUM(keys_proportion) - 1) DESC, id_total_by_fsname DESC;
+ORDER BY ROUND(SUM(keys_proportion)::NUMERIC, 6) DESC, SUBSTRING(id_total_by_fsname, 10)::NUMERIC DESC;
 
 -- Vérification sur des groupes ciblés
 SELECT
@@ -415,13 +441,14 @@ SELECT
     keys_proportion,
     new_value,
     has_na_in_fsname
-FROM v_fs_processed
-WHERE id_total_by_fsname IN ('total_fs_101289', 'total_fs_52820')
+FROM fs_processed
+WHERE id_total_by_fsname IN ('total_fs_52828', 'total_fs_52827')
 ORDER BY
     id_total_by_fsname,
-    value NULLS LAST;  
+    value NULLS LAST;
 
 -- 4.2.2. DEDUPLICATION DES DONNEES
+DROP VIEW IF EXISTS v_fs_deduplicated;
 
 CREATE VIEW v_fs_deduplicated AS
     SELECT *
@@ -430,11 +457,12 @@ CREATE VIEW v_fs_deduplicated AS
         *,
         ROW_NUMBER() OVER (
             PARTITION BY origin_sheet, fs_name, year, country_code, country_name, 
-                         supra_reg, fishing_tech, vessel_length, variable_group, 
-                         variable_code, variable_name, unit 
+                         supra_reg, fishing_tech, vessel_length, variable_group,
+                         variable_code, variable_name, unit, id_total_by_fsname,
+                         has_na_in_fsname, total_by_fsname, keys_proportion, new_value
             ORDER BY id_total_by_fsname, value NULLS LAST
         ) AS rn
-        FROM v_fs_processed
+        FROM fs_processed
     ) AS x
     WHERE rn = 1;
 
@@ -445,22 +473,28 @@ WHERE id_total_by_fsname IN ('total_fs_101289', 'total_fs_52820')
 ORDER BY id_total_by_fsname, value NULLS LAST;
 
 -- Contrôle après imputation
-SELECT
-    variable_name,
-    SUM(value) AS value,
-    SUM(new_value) AS new_value,
-    ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance
-FROM v_fs_deduplicated
-GROUP BY variable_name
+SELECT statut, new_value, value, variance
+FROM (
+    SELECT
+        has_na_in_fsname::TEXT AS statut,
+        SUM(new_value) AS new_value,
+        SUM(value) AS value,
+        ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance,
+        0 AS sort_order
+    FROM v_fs_deduplicated
+    GROUP BY has_na_in_fsname
 
-UNION ALL
+    UNION ALL
 
-SELECT
-    'TOTAL' AS variable_name,
-    SUM(value) AS value,
-    SUM(new_value) AS new_value,
-    ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance
-FROM v_fs_deduplicated;
+    SELECT
+        'TOTAL' AS statut,
+        SUM(new_value) AS new_value,
+        SUM(value) AS value,
+        ROUND((SUM(new_value) - SUM(value))::NUMERIC, 4) AS variance,
+        1 AS sort_order
+    FROM v_fs_deduplicated
+) sub
+ORDER BY sort_order, statut;
 
 -- 4.3. VALIDATION FINALE DE fs_clean
 
@@ -483,9 +517,9 @@ SELECT
     COALESCE(new_value, 0) AS value
 FROM v_fs_deduplicated;
 
--- Suppression des vues temporaires
+-- Suppression des objets temporaires
 DROP VIEW IF EXISTS v_fs_deduplicated;
-DROP VIEW IF EXISTS v_fs_processed;
+DROP TABLE IF EXISTS fs_processed;
 
 -- Remplacement de la table de travail par la table finale
 DROP TABLE IF EXISTS fs_clean;
@@ -494,11 +528,7 @@ ALTER TABLE fs_clean_final
 RENAME TO fs_clean;
 
 -- Validation finale de la qualité
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fs_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fs_clean');
 
 -- =========================================
 -- 5. NETTOYAGE DES DONNEES DE landings_raw
@@ -507,11 +537,7 @@ ORDER BY
 -- 5.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('landings_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('landings_raw');
 
 -- Création de la table landings_clean à partir des données brutes et colonnes pertinentes afin de procéder au nettoyage
 DROP TABLE IF EXISTS landings_clean;
@@ -635,11 +661,7 @@ FROM landings_clean
 WHERE value IS NULL;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('landings_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('landings_clean');
 
 -- =======================================
 -- 6. NETTOYAGE DES DONNEES DE species_raw
@@ -648,11 +670,7 @@ ORDER BY
 -- 6.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('species_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('species_raw');
 
 -- Création de la table species_clean à partir des données brutes et colonnes pertinentes afin de procéder au nettoyage
 DROP TABLE IF EXISTS species_clean;
@@ -708,11 +726,7 @@ WHERE species_name IS NULL;
 -- 6.3. VALIDATION FINALE
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('species_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('species_clean');
 
 -- =======================================
 -- 7. NETTOYAGE DES DONNEES DE country_raw
@@ -721,11 +735,7 @@ ORDER BY
 -- 7.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('country_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('country_raw');
 
 -- Création de country_clean
 DROP TABLE IF EXISTS country_clean;
@@ -745,11 +755,7 @@ FROM country_clean;
 -- 7.2. VALIDATION FINALE
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('country_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('country_clean');
 
 -- ==================================================
 -- 8. NETTOYAGE DES DONNEES DE energy_excise_duty_raw
@@ -758,11 +764,7 @@ ORDER BY
 -- 8.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('energy_excise_duty_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('energy_excise_duty_raw');
 
 -- Création de energy_excise_duty_clean
 DROP TABLE IF EXISTS energy_excise_duty_clean;
@@ -783,11 +785,7 @@ FROM energy_excise_duty_clean;
 -- 8.2. VALIDATION FINALE
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('energy_excise_duty_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC,
-    pct_na DESC;
+SELECT * FROM check_data_quality('energy_excise_duty_clean');
 
 -- ===========================================
 -- 9. NETTOYAGE DES DONNEES DE fishingtech_raw
@@ -796,11 +794,7 @@ ORDER BY
 -- 9.1. PREPARATION ET FILTRAGE DES DONNEES
 
 -- Contrôle initial de la qualité des données brutes
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fishingtech_raw')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fishingtech_raw');
 
 -- Création de fishingtech_clean
 DROP TABLE IF EXISTS fishingtech_clean;
@@ -824,11 +818,7 @@ ORDER BY fishingtech_code;
 -- 9.2. VALIDATION FINALE
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fishingtech_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fishingtech_clean');
 
 -- ========================================
 -- 10. ENRICHISSEMENT DU MODELE RELATIONNEL
@@ -861,11 +851,7 @@ FROM species_raw sr
 WHERE sc.species_code = sr.code;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('species_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('species_clean');
 
 -- 10.2. NOMENCLATURE DE fishingtech_clean
 
@@ -905,11 +891,7 @@ FROM fishingtech_raw fr
 WHERE fc.fishingtech_code = fr.code;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fishingtech_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fishingtech_clean');
 
 -- 10.3. CATEGORISATION DES FLOTTES
 
@@ -940,11 +922,7 @@ SET vessel_category =
     END;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('vessel_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('vessel_clean');
 
 -- 10.4. CONSTRUCTION DE geozone_clean
 
@@ -963,11 +941,7 @@ CREATE TABLE geozone_clean AS
 ALTER TABLE geozone_clean ADD PRIMARY KEY(area_code);
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('geozone_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('geozone_clean');
 
 -- 10.5. CONSTRUCTION DE variable_clean
 
@@ -993,11 +967,7 @@ FROM landings_clean;
 ALTER TABLE variable_clean ADD PRIMARY KEY(variable_code);
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('variable_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('variable_clean');
 
 -- ========================================================================================
 -- 11. HARMONISATION DES REFERENTIELS ENTRE LES TABLES DE FAITS ET LES TABLES DE DIMENSIONS
@@ -1164,11 +1134,7 @@ USING duplicates d
 WHERE l.ctid = d.ctid AND d.rn > 1;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('landings_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('landings_clean');
 
 -- 11.2. VERIFICATION DE L'INTEGRITE REFERENTIELLE ENTRE fs_clean et LES TABLES DE DIMENSIONS
 
@@ -1182,11 +1148,7 @@ SET country_year = country_code || '-' || year::TEXT;
 ALTER TABLE energy_excise_duty_clean ADD PRIMARY KEY(country_year);
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('energy_excise_duty_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('energy_excise_duty_clean');
 
 -- Préparation de la clé étrangère country_year dans fs_clean
 ALTER TABLE fs_clean
@@ -1196,11 +1158,7 @@ UPDATE fs_clean
 SET country_year = country_code || '-' || year::TEXT;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fs_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fs_clean');
 
 -- Vérification de l'intégrité référentielle
 
@@ -1270,11 +1228,7 @@ WHERE f.supra_reg IS NOT NULL AND g.area_code IS NULL
 ORDER BY f.supra_reg;
 
 -- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fs_clean')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('fs_clean');
 
 -- =====================================
 -- 12. EXPORTATION DU MODELE RELATIONNEL
@@ -1289,9 +1243,9 @@ CREATE TABLE fact_fs AS
 SELECT
     origin_sheet,
     fs_name,
+    country_year,
     year,
     country_code,
-    country_year,
     supra_reg,
     fishing_tech,
     vessel_length,
@@ -1299,6 +1253,8 @@ SELECT
     unit,
     value
 FROM fs_clean;
+
+DROP TABLE IF EXISTS fs_clean;
 
 -- Création de fact_landings
 DROP TABLE IF EXISTS fact_landings;
@@ -1309,129 +1265,110 @@ SELECT
     fs_name,
     year,
     country_code,
-    --country_year,
     supra_reg,
     sub_reg,
     fishing_tech,
     vessel_length,
     variable_code,
-    unit,
     species_code,
+    unit,
     value
 FROM landings_clean;
 
--- Contrôle final de la qualité des données
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fact_fs')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+DROP TABLE IF EXISTS landings_clean;
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fact_landings')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+-- Contrôle final de la qualité des données
+SELECT * FROM check_data_quality('fact_fs');
+
+SELECT * FROM check_data_quality('fact_landings');
 
 -- 12.2. CREATION DES TABLES DE DIMENSIONS
 
 -- Création de dim_species
 DROP TABLE IF EXISTS dim_species;
+
 CREATE TABLE dim_species AS
 SELECT *
 FROM species_clean;
 
+DROP TABLE IF EXISTS species_clean;
+DROP TABLE IF EXISTS species_mapping_clean;
+
 -- Création de dim_fishingtech
 DROP TABLE IF EXISTS dim_fishingtech;
+
 CREATE TABLE dim_fishingtech AS
 SELECT *
 FROM fishingtech_clean;
 
+DROP TABLE IF EXISTS fishingtech_clean;
+
 -- Création de dim_vessel
 DROP TABLE IF EXISTS dim_vessel;
+
 CREATE TABLE dim_vessel AS
 SELECT *
 FROM vessel_clean;
 
+DROP TABLE IF EXISTS vessel_clean;
+
 -- Création de dim_geozone
 DROP TABLE IF EXISTS dim_geozone;
+
 CREATE TABLE dim_geozone AS
 SELECT *
 FROM geozone_clean;
 
+DROP TABLE IF EXISTS geozone_clean;
+
 -- Création de dim_country
 DROP TABLE IF EXISTS dim_country;
+
 CREATE TABLE dim_country AS
 SELECT *
 FROM country_clean;
 
+DROP TABLE IF EXISTS country_clean;
+
 -- Création de dim_variable
 DROP TABLE IF EXISTS dim_variable;
+
 CREATE TABLE dim_variable AS
 SELECT *
 FROM variable_clean;
 
+DROP TABLE IF EXISTS variable_clean;
+
 -- Création de dim_energy_excise_duty
 DROP TABLE IF EXISTS dim_energy_excise_duty;
+
 CREATE TABLE dim_energy_excise_duty AS
-SELECT *
+SELECT
+    country_year,
+    year,
+    country_code,
+    country_name,
+    excise_duty_eur_l,
+    origin_sheet
 FROM energy_excise_duty_clean;
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fact_fs')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
-
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('fact_landings')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+DROP TABLE IF EXISTS energy_excise_duty_clean;
 
 -- Contrôle final de la qualité des données
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_country')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_country');
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_fishingtech')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_fishingtech');
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_geozone')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_geozone');
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_species')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_species');
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_vessel')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_vessel');
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_variable')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_variable');
 
-SELECT variable, type, doublon, na, pct_na, modalite, apercu
-FROM check_data_quality('dim_energy_excise_duty')
-ORDER BY 
-    CASE WHEN variable = '--- GLOBAL ---' THEN 1 ELSE 0 END ASC, 
-    pct_na DESC;
+SELECT * FROM check_data_quality('dim_energy_excise_duty');
 
 -- 12.3. EXPORTATION DU MODELE EN CSV
 
